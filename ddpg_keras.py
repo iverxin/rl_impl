@@ -43,7 +43,7 @@ class DDPG(object):
         self.critic_lr = LR_CRITIC
         self.tau = 0.001
         self.batch_size = 32
-        self.memory = deque(maxlen=1000000)
+        self.memory = deque(maxlen=100000)
         self.W_INIT = tf.random_normal_initializer(mean=0, stddev=0.3)
         self.B_INIT = tf.constant_initializer(0.1)
 
@@ -223,7 +223,6 @@ class DDPG(object):
             return int(episode)
         except Exception as e:
             print(e)
-
 
 if __name__ == "__main__":
     # prepare a parser
