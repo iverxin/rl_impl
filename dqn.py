@@ -63,7 +63,7 @@ class DQNAgent:
 
     def replay(self, batch_size):
         # sample some experiences from the memory, and train;
-        start = datetime.now();
+        start = datetime.now()
         minibatch = random.sample(self.memory, self.batch_size)
 
         states = np.array([i[0] for i in minibatch])
@@ -75,12 +75,13 @@ class DQNAgent:
         states = np.squeeze(states,axis=1)
         next_states = np.squeeze(next_states)
         temp = np.amax(self.model.predict_on_batch(next_states),axis = 1)
+        # 1-dones
         target = rewards + self.gamma * temp * (1-dones)
 
         target_formate = self.model.predict_on_batch(states)
-        ind = np.array([i for i in range(self.batch_size)])
-        # Attention the usage
-        target_formate[ind, actions] = target
+        index = np.array([i for i in range(self.batch_size)])
+        # Attention: the usage
+        target_formate[index, actions] = target
 
         self.model.fit(states, target_formate, epochs=1, verbose=0)
 
@@ -96,8 +97,8 @@ class DQNAgent:
 
 
 if __name__ == "__main__":
-    # env = gym.make('CartPole-v1')
-    env = gym.make('LunarLander-v2')
+    env = gym.make('CartPole-v1')
+    # env = gym.make('LunarLander-v2')
     env.seed(0)
     np.random.seed(0)
     logFileName = "dqn.log"
@@ -107,21 +108,21 @@ if __name__ == "__main__":
     action_size = env.action_space.n
     agent = DQNAgent(state_size, action_size)
 
-    try:
-        fileList = os.listdir("./checkpoint/")
-        maxNum = 0
-        for f in fileList:
-            if maxNum < int(f):
-                maxNum = int(f)
-        agent.load("./checkpoint/"+str(maxNum))
-        print("load the chekpoint of {}".format(maxNum))
-    except  Exception as err:
-        print('no backup')
-    done = False
-
+    # try:
+    #     fileList = os.listdir("./checkpoint/")
+    #     maxNum = 0
+    #     for f in fileList:
+    #         if maxNum < int(f):
+    #             maxNum = int(f)
+    #     agent.load("./checkpoint/"+str(maxNum))
+    #     print("load the chekpoint of {}".format(maxNum))
+    # except  Exception as err:
+    #     print('no backup')
+    # done = False
+    #
     loss = deque(maxlen=100)
-    e = maxNum
-
+    # e = maxNum
+    e = 0
     while e < EPISODES:
         e += 1
         state = env.reset()

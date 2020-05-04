@@ -23,11 +23,8 @@ python tutorial_DDPG.py --train/test
 """
 
 import argparse
-import datetime
 import os
-import random
 import time
-from collections import deque
 
 import gym
 import matplotlib.pyplot as plt
@@ -36,8 +33,6 @@ import tensorflow as tf
 
 import tensorlayer as tl
 
-BASE_LOG_DIR = './ddpg_log'
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 # add arguments in command  --train/test
 parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
 parser.add_argument('--train', dest='train', action='store_true', default=False)
@@ -48,21 +43,20 @@ args = parser.parse_args()
 
 ENV_ID = 'Pendulum-v0'  # environment id
 RANDOM_SEED = 2  # random seed, can be either an int number or None
-RENDER = False  # render while training
+RENDER = True  # render while training
 
 ALG_NAME = 'DDPG'
-TRAIN_EPISODES = 1000  # total number of episodes for training
+TRAIN_EPISODES = 100  # total number of episodes for training
 TEST_EPISODES = 10  # total number of episodes for training
 MAX_STEPS = 200  # total number of steps for each episode
 
 LR_A = 0.001  # learning rate for actor
-LR_C = 0.002  # learning rate for critic # 0.002
-GAMMA = 0.99  # reward discount #0.99
+LR_C = 0.002  # learning rate for critic
+GAMMA = 0.9  # reward discount
 TAU = 0.01  # soft replacement
 MEMORY_CAPACITY = 10000  # size of replay buffer
 BATCH_SIZE = 32  # update action batch size
 VAR = 2  # control exploration
-
 
 ###############################  DDPG  ####################################
 
@@ -73,13 +67,11 @@ class DDPG(object):
     """
 
     def __init__(self, action_dim, state_dim, action_range):
-        # self.memory = np.zeros((MEMORY_CAPACITY, state_dim * 2 + action_dim + 1), dtype=np.float32)
-        self.memory = deque(maxlen=10000)
+        self.memory = np.zeros((MEMORY_CAPACITY, state_dim * 2 + action_dim + 1), dtype=np.float32)
         self.pointer = 0
         self.action_dim, self.state_dim, self.action_range = action_dim, state_dim, action_range
         self.var = VAR
-        self.reply_time = 0
-        self.min_explo = 0.05
+
         W_init = tf.random_normal_initializer(mean=0, stddev=0.3)
         b_init = tf.constant_initializer(0.1)
 
@@ -91,13 +83,11 @@ class DDPG(object):
             :return: act
             """
             input_layer = tl.layers.Input(input_state_shape, name='A_input')
-            layer = tl.layers.Dense(n_units=200, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='A_l1')(input_layer)
-            layer = tl.layers.Dense(n_units=200, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='A_l2')(layer)
+            layer = tl.layers.Dense(n_units=64, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='A_l1')(input_layer)
+            layer = tl.layers.Dense(n_units=64, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='A_l2')(layer)
             layer = tl.layers.Dense(n_units=action_dim, act=tf.nn.tanh, W_init=W_init, b_init=b_init, name='A_a')(layer)
             layer = tl.layers.Lambda(lambda x: action_range * x)(layer)
-            model = tl.models.Model(inputs=input_layer, outputs=layer, name='Actor' + name)
-            print(model)
-            return model
+            return tl.models.Model(inputs=input_layer, outputs=layer, name='Actor' + name)
 
         def get_critic(input_state_shape, input_action_shape, name=''):
             """
@@ -110,12 +100,10 @@ class DDPG(object):
             state_input = tl.layers.Input(input_state_shape, name='C_s_input')
             action_input = tl.layers.Input(input_action_shape, name='C_a_input')
             layer = tl.layers.Concat(1)([state_input, action_input])
-            layer = tl.layers.Dense(n_units=200, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='C_l1')(layer)
-            layer = tl.layers.Dense(n_units=200, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='C_l2')(layer)
+            layer = tl.layers.Dense(n_units=64, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='C_l1')(layer)
+            layer = tl.layers.Dense(n_units=64, act=tf.nn.relu, W_init=W_init, b_init=b_init, name='C_l2')(layer)
             layer = tl.layers.Dense(n_units=1, W_init=W_init, b_init=b_init, name='C_out')(layer)
-            model = tl.models.Model(inputs=[state_input, action_input], outputs=layer, name='Critic' + name)
-            print(model)
-            return model
+            return tl.models.Model(inputs=[state_input, action_input], outputs=layer, name='Critic' + name)
 
         self.actor = get_actor([None, state_dim])
         self.critic = get_critic([None, state_dim], [None, action_dim])
@@ -165,7 +153,6 @@ class DDPG(object):
         a = self.actor(np.array([s], dtype=np.float32))[0]
         if greedy:
             return a
-
         return np.clip(
             np.random.normal(a, self.var), -self.action_range, self.action_range
         )  # add randomness to action selection for exploration
@@ -175,50 +162,30 @@ class DDPG(object):
         Update parameters
         :return: None
         """
-        if self.var > self.min_explo:
-            self.var *= .9995
-        # indices = np.random.choice(MEMORY_CAPACITY, size=BATCH_SIZE)
-        # datas = self.memory[indices, :]
-        # states = datas[:, :self.state_dim]
-        # actions = datas[:, self.state_dim:self.state_dim + self.action_dim]
-        # rewards = datas[:, -self.state_dim - 1:-self.state_dim]
-        # states_ = datas[:, -self.state_dim:]
-
-        minibatch = random.sample(self.memory, 32)
-
-        states = np.array([i[0] for i in minibatch])
-        actions = np.array([i[1] for i in minibatch])
-        actions = actions.astype(dtype='float32')
-        rewards = np.array([i[2] for i in minibatch])
-        rewards = np.reshape(rewards, (32, 1))
-        next_states = np.array([i[3] for i in minibatch])
+        self.var *= .9995
+        indices = np.random.choice(MEMORY_CAPACITY, size=BATCH_SIZE)
+        datas = self.memory[indices, :]
+        states = datas[:, :self.state_dim]
+        actions = datas[:, self.state_dim:self.state_dim + self.action_dim]
+        rewards = datas[:, -self.state_dim - 1:-self.state_dim]
+        states_ = datas[:, -self.state_dim:]
 
         with tf.GradientTape() as tape:
-            next_actions = self.actor_target(next_states)
-            q_ = self.critic_target([next_states, next_actions])
-            y = rewards + GAMMA * q_  # y target.
-            q = self.critic([states, actions])  # q predicted
+            actions_ = self.actor_target(states_)
+            q_ = self.critic_target([states_, actions_])
+            y = rewards + GAMMA * q_
+            q = self.critic([states, actions])
             td_error = tf.losses.mean_squared_error(y, q)
         critic_grads = tape.gradient(td_error, self.critic.trainable_weights)
         self.critic_opt.apply_gradients(zip(critic_grads, self.critic.trainable_weights))
 
-        # train actor network
         with tf.GradientTape() as tape:
             a = self.actor(states)
-            q = self.critic([states, a])  # q is a function of a
-            act_j = -tf.reduce_mean(q)  # max the q
-        actor_grads = tape.gradient(act_j, self.actor.trainable_weights)
+            q = self.critic([states, a])
+            actor_loss = -tf.reduce_mean(q)  # maximize the q
+        actor_grads = tape.gradient(actor_loss, self.actor.trainable_weights)
         self.actor_opt.apply_gradients(zip(actor_grads, self.actor.trainable_weights))
-
-        self.reply_time += 1
-        # tensorboard
-        critic_loss_mean(td_error)
-        actor_j_mean(act_j)
-        with train_summary_writer.as_default():
-            tf.summary.scalar('critic_loss', critic_loss_mean.result(), step=self.reply_time)
-            tf.summary.scalar('actor_j', actor_j_mean.result(), step=self.reply_time)
-
-        self.update_para()
+        self.ema_update()
 
     def store_transition(self, s, a, r, s_):
         """
@@ -229,13 +196,12 @@ class DDPG(object):
         :param s_: next state
         :return: None
         """
-        self.memory.append((s, a, r, s_))
-        # s = s.astype(np.float32)
-        # s_ = s_.astype(np.float32)
-        # transition = np.hstack((s, a, [r], s_))
-        # index = self.pointer % MEMORY_CAPACITY  # replace the old memory with new memory
-        # self.memory[index, :] = transition
-        # self.pointer += 1
+        s = s.astype(np.float32)
+        s_ = s_.astype(np.float32)
+        transition = np.hstack((s, a, [r], s_))
+        index = self.pointer % MEMORY_CAPACITY  # replace the old memory with new memory
+        self.memory[index, :] = transition
+        self.pointer += 1
 
     def save(self):
         """
@@ -261,32 +227,14 @@ class DDPG(object):
         tl.files.load_hdf5_to_weights_in_order(os.path.join(path, 'critic.hdf5'), self.critic)
         tl.files.load_hdf5_to_weights_in_order(os.path.join(path, 'critic_target.hdf5'), self.critic_target)
 
-    def update_para(self):
-        src_paras = self.actor.trainable_weights + self.critic.trainable_weights
-        tar_paras = self.actor_target.trainable_weights + self.critic_target.trainable_weights
-
-        for i, j in zip(src_paras, tar_paras):
-            j.assign(0.001 * i + (1 - 0.001) * j)
-
 
 if __name__ == '__main__':
-    # env = gym.make(ENV_ID).unwrapped
-    env = gym.make('LunarLanderContinuous-v2')
+    env = gym.make(ENV_ID).unwrapped
+
     # reproducible
     env.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
     tf.random.set_seed(RANDOM_SEED)
-    random.seed(RANDOM_SEED)
-    # ===========tensorboard=================
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir = os.path.join(BASE_LOG_DIR, 'tl_train')
-
-    # define Total_rewards
-    total_rewards_mean = tf.keras.metrics.Mean('total_rewards_mean', dtype=tf.float32)
-    critic_loss_mean = tf.keras.metrics.Mean('critic_loss_mean', dtype=tf.float32)
-    actor_j_mean = tf.keras.metrics.Mean('actor_j_mean', dtype=tf.float32)
-
-    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
 
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
@@ -295,87 +243,42 @@ if __name__ == '__main__':
     agent = DDPG(action_dim, state_dim, action_range)
 
     t0 = time.time()
-    for episode in range(TRAIN_EPISODES):
-        if (episode) % 10 == 0:
-            pass
-            # agent.save(episode)
-            # if agent.exploration > agent.min_exploration:
-            #     agent.exploration = agent.exploration * 0.9995
-        if episode % 30 == 0:
-            # agent.ema_update()
-            agent.update_para()
+    if args.train:  # train
+        all_episode_reward = []
+        for episode in range(TRAIN_EPISODES):
+            state = env.reset()
+            episode_reward = 0
+            for step in range(MAX_STEPS):
+                if RENDER:
+                    env.render()
+                # Add exploration noise
+                action = agent.get_action(state)
+                state_, reward, done, info = env.step(action)
+                agent.store_transition(state, action, reward, state_)
 
-        state = env.reset()
-        episode_reward = 0
-        for t in range(MAX_STEPS):
-            env.render()
-            action = agent.get_action(state)
-            next_state, reward, done, _ = env.step(action)
-            agent.store_transition(state, action, reward, next_state)
+                if agent.pointer > MEMORY_CAPACITY:
+                    agent.learn()
 
-            state = next_state
+                state = state_
+                episode_reward += reward
+                if done:
+                    break
 
-            episode_reward += reward
-
-            if len(agent.memory) > 32:
-                agent.learn()
-            if done:
-                break
-
-        print('Training  | Episode: {}/{}  | Episode Reward: {:.4f}  | exporation: {:.4f}'.format(
-            episode, TRAIN_EPISODES, episode_reward,
-            agent.var)
-        )
-        # tensorboard
-        total_rewards_mean(episode_reward)
-
-        # graph name
-        with train_summary_writer.as_default():
-            tf.summary.scalar('reward', total_rewards_mean.result(), step=episode)
-
-    # if True:  # train
-    #     all_episode_reward = []
-    #     for episode in range(TRAIN_EPISODES):
-    #         state = env.reset()
-    #         episode_reward = 0
-    #         for step in range(MAX_STEPS):
-    #             if True:
-    #                 env.render()
-    #             # Add exploration noise
-    #             action = agent.get_action(state)
-    #             state_, reward, done, info = env.step(action)
-    #             agent.store_transition(state, action, reward, state_)
-    #
-    #             if len(agent.memory) > 32:  #MEMORY_CAPACITY:
-    #                 agent.learn()
-    #
-    #             state = state_
-    #             episode_reward += reward
-    #             if done:
-    #                 break
-    #
-    #         if episode == 0:
-    #             all_episode_reward.append(episode_reward)
-    #         else:
-    #             all_episode_reward.append(all_episode_reward[-1] * 0.9 + episode_reward * 0.1)
-    #         print(
-    #             'Training  | Episode: {}/{}  | Episode Reward: {:.4f} | var :{} | Running Time: {:.4f}'.format(
-    #                 episode + 1, TRAIN_EPISODES, episode_reward, agent.var,
-    #                 time.time() - t0
-    #             )
-    #         )
-    #
-    #         # tensorboard
-    #         total_rewards_mean(episode_reward)
-    #         # graph name
-    #         with train_summary_writer.as_default():
-    #             tf.summary.scalar('reward', total_rewards_mean.result(), step=episode)
-    #
-    #     agent.save()
-    #     plt.plot(all_episode_reward)
-    #     if not os.path.exists('image'):
-    #         os.makedirs('image')
-    #     plt.savefig(os.path.join('image', '_'.join([ALG_NAME, ENV_ID])))
+            if episode == 0:
+                all_episode_reward.append(episode_reward)
+            else:
+                all_episode_reward.append(all_episode_reward[-1] * 0.9 + episode_reward * 0.1)
+            print(
+                'Training  | Episode: {}/{}  | Episode Reward: {:.4f}  | Running Time: {:.4f}'.format(
+                    episode + 1, TRAIN_EPISODES, episode_reward,
+                    time.time() - t0
+                )
+            )
+        agent.save()
+        plt.plot(all_episode_reward)
+        if not os.path.exists('image'):
+            os.makedirs('image')
+        plt.savefig(os.path.join('image', '_'.join([ALG_NAME, ENV_ID])))
 
     if args.test:
         # test

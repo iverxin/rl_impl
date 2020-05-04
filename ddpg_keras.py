@@ -4,7 +4,6 @@ import time
 from collections import deque
 import datetime
 import random
-import tensorlayer as tl
 import argparse
 import gym
 import tensorflow as tf
@@ -12,20 +11,20 @@ from tensorflow import keras
 import sendmail
 import numpy as np
 import os
-import matplotlib.pyplot as plt
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 print(tf.__version__)
-BASE_LOG_DIR = './ddpg_log'
+BASE_LOG_DIR = os.path.join(os.getcwd(),'ddpg_log')
 ALG_NAME = 'DDPG'
-ENV = 'LunarLanderContinuous-v2'
+# ENV = 'LunarLanderContinuous-v2'
 # ENV = 'MountainCarContinuous-v0'
+ENV = 'Pendulum-v0'
 RANDOM_SEED = 2
 DISPLAY = True
-EPISODES = 1000
+EPISODES = 300
 MAX_STEPS = 1000
-LR_ACTOR = 0.0005
-LR_CRITIC = 0.0002
+LR_ACTOR = 0.002
+LR_CRITIC = 0.002
 W_init = tf.random_normal_initializer(mean=0, stddev=0.3)
 b_init = tf.constant_initializer(0.1)
 
@@ -34,16 +33,16 @@ class DDPG(object):
     def __init__(self, state_dim, action_dim, action_bound):
         self.reply_times = 0
         self.min_exploration = 0.5
-        self.GAMMA = 0.99
-        self.exploration = 3
+        self.GAMMA = 0.9
+        self.exploration = 2
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.action_bound = action_bound
         self.actor_lr = LR_ACTOR
         self.critic_lr = LR_CRITIC
-        self.tau = 0.001
+        self.tau = 0.01
         self.batch_size = 32
-        self.memory = deque(maxlen=100000)
+        self.memory = deque(maxlen=10000)
         self.W_INIT = tf.random_normal_initializer(mean=0, stddev=0.3)
         self.B_INIT = tf.constant_initializer(0.1)
 
@@ -73,12 +72,12 @@ class DDPG(object):
 
     def create_actor_network(self, input_state_shape, name=""):
         model = keras.Sequential(name='Actor ' + name)
-        model.add(keras.layers.Dense(units=200, input_dim=input_state_shape, activation=tf.nn.relu,
+        model.add(keras.layers.Dense(units=64, input_dim=input_state_shape, activation=tf.nn.relu,
                                      kernel_initializer=self.W_INIT, bias_initializer=self.B_INIT))
-        model.add(keras.layers.Dense(units=200, activation=tf.nn.relu, kernel_initializer=self.W_INIT,
-                                     bias_initializer=self.B_INIT))
         model.add(keras.layers.Dense(units=64, activation=tf.nn.relu, kernel_initializer=self.W_INIT,
                                      bias_initializer=self.B_INIT))
+        # model.add(keras.layers.Dense(units=64, activation=tf.nn.relu, kernel_initializer=self.W_INIT,
+        #                              bias_initializer=self.B_INIT))
         model.add(keras.layers.Dense(units=self.action_dim, activation=tf.nn.tanh, name='output',
                                      kernel_initializer=self.W_INIT, bias_initializer=self.B_INIT))
         model.add(keras.layers.Lambda(lambda x: self.action_bound * x))
@@ -91,12 +90,12 @@ class DDPG(object):
         status_input = keras.layers.Input(shape=input_state_shape, name='critic_state_input')
         actions_input = keras.layers.Input(shape=input_action_shape, name='critic_action_input')
         concat = keras.layers.Concatenate(axis=1)([status_input, actions_input])
-        layer = keras.layers.Dense(units=400, activation=tf.nn.relu,
+        layer = keras.layers.Dense(units=64, activation=tf.nn.relu,
                                    kernel_initializer=self.W_INIT, bias_initializer=self.B_INIT)(concat)
-        layer = keras.layers.Dense(units=200, activation=tf.nn.relu, kernel_initializer=self.W_INIT,
+        layer = keras.layers.Dense(units=64, activation=tf.nn.relu, kernel_initializer=self.W_INIT,
                                    bias_initializer=self.B_INIT)(layer)
-        layer = keras.layers.Dense(units=200, activation=tf.nn.relu, kernel_initializer=self.W_INIT,
-                                   bias_initializer=self.B_INIT)(layer)
+        # layer = keras.layers.Dense(units=200, activation=tf.nn.relu, kernel_initializer=self.W_INIT,
+        #                            bias_initializer=self.B_INIT)(layer)
         out = keras.layers.Dense(units=1, kernel_initializer=self.W_INIT,
                                  bias_initializer=self.B_INIT, name='output_Q')(layer)
         model = keras.models.Model(inputs=[status_input, actions_input], outputs=out, name='Critic ' + name)
@@ -135,7 +134,7 @@ class DDPG(object):
         :return: None
         """
         if self.exploration > self.min_exploration:
-            self.exploration *= 0.99995
+            self.exploration *= 0.9995
         minibatch = random.sample(self.memory, self.batch_size)
 
         states = np.array([i[0] for i in minibatch])
@@ -303,7 +302,7 @@ if __name__ == "__main__":
 
             episode_reward += reward
 
-            if len(agent.memory) > agent.batch_size:
+            if len(agent.memory) >= 100:#agent.batch_size:
                 agent.replay()
             if done:
                 break
