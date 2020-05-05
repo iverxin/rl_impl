@@ -6,6 +6,7 @@ a2c/
 a3c/
 # C extensions
 *.so
+sendmail.py
 
 # Distribution / packaging
 .Python
