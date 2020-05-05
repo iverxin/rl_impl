@@ -21,7 +21,7 @@ LR_A = 0.0001
 LR_C = 0.001
 ENTROY_BETA = 0.01
 GLOBAL_STEPS = 0
-MAX_GLOBAL_EP = 1000
+MAX_GLOBAL_EP = 3000
 SEED = 2
 EPISODE_STEP = 200
 
@@ -84,9 +84,7 @@ class A3C(object):
         :return:
         """
         global GLOBAL_AC
-        states = tf.convert_to_tensor(states, dtype=tf.float32)
-        actions = tf.convert_to_tensor(actions, dtype=tf.float32)
-        rets = tf.convert_to_tensor(rets, dtype=tf.float32)
+        global_AC_w_lock.acquire()
 
         with tf.GradientTape() as tape:
             td = tf.subtract(rets, self.value_net(states), name='td-err')
@@ -112,23 +110,28 @@ class A3C(object):
             p_loss = tf.reduce_mean(-expect_v)  # this is a batch, no only one.
         p_grad = tape.gradient(p_loss, self.policy_net.trainable_weights)
         OPT_A.apply_gradients(zip(p_grad, GLOBAL_AC.policy_net.trainable_weights))
+        # release the GLOBAL_AC
+        global_AC_w_lock.release()
 
     @tf.function
     def pull_from_global(self):
-
+        global_AC_w_lock.acquire()
         for local_para, global_para in zip(self.value_net.trainable_weights, GLOBAL_AC.value_net.trainable_weights):
             local_para.assign(global_para)
 
         for local_para, global_para in zip(self.policy_net.trainable_weights, GLOBAL_AC.policy_net.trainable_weights):
             local_para.assign(global_para)
+        global_AC_w_lock.release()
 
-    def save(self):
+    def save(self, name=''):
+        global_AC_w_lock.acquire()
         path = os.path.join('a3c', ENV)
         if not os.path.exists(path):
             os.makedirs(path)
 
-        self.policy_net.save_weights(os.path.join(path, 'policy_net'))
-        self.value_net.save_weights(os.path.join(path, 'value_net'))
+        self.policy_net.save_weights(os.path.join(path, 'policy_net' + name))
+        self.value_net.save_weights(os.path.join(path, 'value_net' + name))
+        global_AC_w_lock.release()
 
     def load(self):
         path = os.path.join('a3c', ENV)
@@ -158,10 +161,7 @@ class Worker(object):
         global GLOBAL_STEPS
         # get MINI_STEP trajectory
         for i_ in range(TRAJ_LEN):
-
-            # GLOBAL_STEPS += 1
             self.step_counter += 1
-
             m_states.append(init_state)
 
             action = self.agent.get_action(init_state)
@@ -185,10 +185,13 @@ class Worker(object):
         global GLOBAL_STEPS
         # global EPISODE_STEP
         state = self.env.reset()
-        while True:
+        while not COORD.should_stop():
             if GLOBAL_STEPS > MAX_GLOBAL_EP:
                 print(self.name + " out!")
                 break
+            if (GLOBAL_STEPS+1) % 500 == 0:
+                GLOBAL_AC.save(name=str(GLOBAL_STEPS))
+                print("save the ckpoint")
 
             traj, terminal = self.get_trajectory(state)
 
@@ -214,6 +217,11 @@ class Worker(object):
                 ret = rewards[i_] + GAMMA * ret
                 ret_list.append(ret)
             ret_list.reverse()
+
+            states = tf.convert_to_tensor(states, dtype=tf.float32)
+            actions = tf.convert_to_tensor(actions, dtype=tf.float32)
+            ret_list = tf.convert_to_tensor(ret_list, dtype=tf.float32)
+
             self.agent.update_to_global(states, actions, ret_list)
             self.agent.pull_from_global()
 
@@ -244,6 +252,9 @@ if __name__ == "__main__":
     if not os.path.exists('a2c'):
         os.makedirs('a2c')
     BASE_LOG_DIR = 'a2c'
+
+    # lock
+    global_AC_w_lock = threading.Lock()
 
     # train
     if args.train:

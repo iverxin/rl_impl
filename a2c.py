@@ -38,7 +38,6 @@ class A3C(object):
         self.value_net = model.create_critic_network(input_state_shape=self.state_dim,
                                                      input_action_shape=self.action_dim, scope=self.name)
 
-
         self.memory = []
 
     def get_action(self, _state, greedy=False):
@@ -84,10 +83,6 @@ class A3C(object):
         global GLOBAL_AC
 
         with tf.GradientTape() as tape:
-            states = tf.convert_to_tensor(states, dtype=tf.float32)
-            actions = tf.convert_to_tensor(actions, dtype=tf.float32)
-            rets = tf.convert_to_tensor(rets, dtype=tf.float32)
-
             loss = tf.losses.mean_squared_error(rets, self.value_net(states))
         v_grad = tape.gradient(loss, self.value_net.trainable_weights)
         OPT_C.apply_gradients(zip(v_grad, GLOBAL_AC.value_net.trainable_weights))
@@ -224,7 +219,13 @@ class Worker(object):
                     ret = rewards[i_] + GAMMA * ret
                     ret_list.append(ret)
                 ret_list.reverse()
+
+                states = tf.convert_to_tensor(states, dtype=tf.float32)
+                actions = tf.convert_to_tensor(actions, dtype=tf.float32)
+                ret_list = tf.convert_to_tensor(ret_list, dtype=tf.float32)
+
                 self.agents[i].update_to_global(states, actions, ret_list)
+
 
             # sync
             for i in range(self.worker_num):
@@ -250,7 +251,7 @@ if __name__ == "__main__":
     np.random.seed(SEED)
     tf.random.set_seed(SEED)
 
-    GLOBAL_AC = A3C('Global name')
+    # GLOBAL_AC = A3C('Global name')
     OPT_A = tf.optimizers.RMSprop(LR_A, name='RMSPropA')
     OPT_C = tf.optimizers.RMSprop(LR_C, name='RMSPropC')
 
@@ -258,8 +259,7 @@ if __name__ == "__main__":
         os.makedirs('a2c')
     BASE_LOG_DIR = 'a2c'
 
-
-
+    GLOBAL_AC =None
     if args.train:
         ##########tensorboard##############
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + 'a2c'
@@ -269,12 +269,10 @@ if __name__ == "__main__":
         critic_loss_mean = keras.metrics.Mean('critic_loss_mean', dtype=tf.float32)
         actor_j_mean = keras.metrics.Mean('actor_j_mean', dtype=tf.float32)
         train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-        tf.summary.trace_on(graph=True, profiler=True)
 
+        GLOBAL_AC = A3C('Global_name')
         # Train
         worker = Worker(name='worker',num=8)
-        with train_summary_writer.as_default():
-            tf.summary.trace_export(name='workers graph',step=0, profiler_outdir=train_log_dir)
         worker.learn()
         GLOBAL_AC.save()
 
