@@ -11,6 +11,11 @@ import tensorflow.keras as keras
 from ac import model
 
 """
+单线程模拟多线程
+"""
+
+
+"""
 Global var
 """
 ENV = 'Pendulum-v0'

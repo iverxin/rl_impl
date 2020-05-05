@@ -108,18 +108,6 @@ if __name__ == "__main__":
     action_size = env.action_space.n
     agent = DQNAgent(state_size, action_size)
 
-    # try:
-    #     fileList = os.listdir("./checkpoint/")
-    #     maxNum = 0
-    #     for f in fileList:
-    #         if maxNum < int(f):
-    #             maxNum = int(f)
-    #     agent.load("./checkpoint/"+str(maxNum))
-    #     print("load the chekpoint of {}".format(maxNum))
-    # except  Exception as err:
-    #     print('no backup')
-    # done = False
-    #
     loss = deque(maxlen=100)
     # e = maxNum
     e = 0
