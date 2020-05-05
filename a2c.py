@@ -20,7 +20,7 @@ LR_A = 0.0001
 LR_C = 0.001
 ENTROY_BETA = 0.01
 GLOBAL_STEPS = 0
-MAX_GLOBAL_EP = 15
+MAX_GLOBAL_EP = 3000
 GLOBAL_UPDATE_EPOSIDES = 200
 SEED = 2
 EPISODE_STEP = 200
@@ -34,9 +34,11 @@ class A3C(object):
         self.name = name
 
         # create net work
-        self.policy_net = model.create_actor_network(self.state_dim, self.action_dim, self.action_bound)
+        self.policy_net = model.create_actor_network(self.state_dim, self.action_dim, self.action_bound, scope=self.name)
         self.value_net = model.create_critic_network(input_state_shape=self.state_dim,
-                                                     input_action_shape=self.action_dim)
+                                                     input_action_shape=self.action_dim, scope=self.name)
+
+
         self.memory = []
 
     def get_action(self, _state, greedy=False):
@@ -71,6 +73,7 @@ class A3C(object):
         state = np.asarray([state], dtype=np.float32)
         return self.value_net(state)[0]
 
+    @tf.function
     def update_to_global(self, states, actions, rets):
         """
         :param states: a batch state
@@ -81,20 +84,19 @@ class A3C(object):
         global GLOBAL_AC
 
         with tf.GradientTape() as tape:
-            loss = tf.losses.mean_squared_error(rets, self.value_net(tf.constant(states)))
+            states = tf.convert_to_tensor(states, dtype=tf.float32)
+            actions = tf.convert_to_tensor(actions, dtype=tf.float32)
+            rets = tf.convert_to_tensor(rets, dtype=tf.float32)
+
+            loss = tf.losses.mean_squared_error(rets, self.value_net(states))
         v_grad = tape.gradient(loss, self.value_net.trainable_weights)
-        #
-        # with tf.GradientTape() as tape:
-        #     td = tf.subtract(rets, self.value_net(tf.constant(states)))
-        #     loss = tf.reduce_mean(tf.square(td))
-        # v_grad = tape.gradient(loss, self.value_net.trainable_weights)
         OPT_C.apply_gradients(zip(v_grad, GLOBAL_AC.value_net.trainable_weights))
 
         with tf.GradientTape() as tape:
-            adv = tf.subtract(rets, self.value_net(tf.constant(states)))
+            adv = tf.subtract(rets, self.value_net(states))
 
             # compute action's proability
-            mu, sigma = self.policy_net(tf.constant(states))
+            mu, sigma = self.policy_net(states)
             mu, sigma = self.action_bound * mu, sigma + 1e-4  # 防止sigma = 0,导致nan
             norm_dist = tp.distributions.Normal(mu, sigma)
             log_prob = norm_dist.log_prob(actions)
@@ -223,10 +225,10 @@ class Worker(object):
                     ret_list.append(ret)
                 ret_list.reverse()
                 self.agents[i].update_to_global(states, actions, ret_list)
-                self.agents[i].pull_from_global()
-            # sync
-            # for i in range(self.worker_num):
 
+            # sync
+            for i in range(self.worker_num):
+                self.agents[i].pull_from_global()
 
 
 if __name__ == "__main__":
@@ -241,9 +243,7 @@ if __name__ == "__main__":
     STATE_DIM = env.observation_space.shape[0]
     ACTION_DIM = env.action_space.shape[0]
     ACTION_BOUND = env.action_space.high
-    # NUM_WORKERS = multiprocessing.cpu_count()
-    NUM_WORKERS = 1
-    print('num workers:{}'.format(NUM_WORKERS))
+
     # global net
     total_reward = 0
 
@@ -257,22 +257,27 @@ if __name__ == "__main__":
     if not os.path.exists('a2c'):
         os.makedirs('a2c')
     BASE_LOG_DIR = 'a2c'
-    ##########tensorboard##############
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir = os.path.join(BASE_LOG_DIR, current_time)
 
-    # define tensorboard Mean
-    critic_loss_mean = keras.metrics.Mean('critic_loss_mean', dtype=tf.float32)
-    actor_j_mean = keras.metrics.Mean('actor_j_mean', dtype=tf.float32)
-
-    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
 
 
     if args.train:
+        ##########tensorboard##############
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + 'a2c'
+        train_log_dir = os.path.join(BASE_LOG_DIR, current_time)
+
+        # define tensorboard Mean
+        critic_loss_mean = keras.metrics.Mean('critic_loss_mean', dtype=tf.float32)
+        actor_j_mean = keras.metrics.Mean('actor_j_mean', dtype=tf.float32)
+        train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+        tf.summary.trace_on(graph=True, profiler=True)
+
+        # Train
         worker = Worker(name='worker',num=8)
+        with train_summary_writer.as_default():
+            tf.summary.trace_export(name='workers graph',step=0, profiler_outdir=train_log_dir)
         worker.learn()
         GLOBAL_AC.save()
-        
+
     if args.test:
         print('loading weights')
         GLOBAL_AC.load()
