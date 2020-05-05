@@ -5,13 +5,17 @@ import random
 import gym
 import numpy as np
 from collections import deque
-
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.optimizers import Adam
 import sendmail
 import os
 EPISODES = 1000
+"""
+Author: Spade
+@Time : 2020/5/5 
+@Email: spadeaiverxin@163.com
+"""
 
 # gamma 0.95-0.99
 # decay 0.996

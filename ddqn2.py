@@ -13,7 +13,11 @@ from tensorflow.keras import backend as K
 import logging
 
 import sendmail
-
+"""
+Author: Spade
+@Time : 2020/5/5 
+@Email: spadeaiverxin@163.com
+"""
 EPISODES = 1000
 
 class DQNAgent:

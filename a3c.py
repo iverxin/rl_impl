@@ -8,8 +8,16 @@ import gym
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tp
-
 from ac import model
+
+"""
+Author: Spade
+@Time : 2020/5/5 
+@Email: spadeaiverxin@163.com
+
+- Use the thead lock
+"""
+
 
 """
 Global var
@@ -133,10 +141,10 @@ class A3C(object):
         self.value_net.save_weights(os.path.join(path, 'value_net' + name))
         global_AC_w_lock.release()
 
-    def load(self):
+    def load(self,name=''):
         path = os.path.join('a3c', ENV)
-        self.policy_net.load_weights(os.path.join(path, 'policy_net'))
-        self.value_net.load_weights(os.path.join(path, 'value_net'))
+        self.policy_net.load_weights(os.path.join(path, 'policy_net' + name))
+        self.value_net.load_weights(os.path.join(path, 'value_net'+name))
 
 
 class Worker(object):
@@ -229,7 +237,7 @@ class Worker(object):
 if __name__ == "__main__":
     # add arguments in command  --train/test
     parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
-    parser.add_argument('--train', dest='train', action='store_true', default=True)
+    parser.add_argument('--train', dest='train', action='store_true', default=False)
     parser.add_argument('--test', dest='test', action='store_true', default=True)
     args = parser.parse_args()
 
@@ -238,6 +246,7 @@ if __name__ == "__main__":
     STATE_DIM = env.observation_space.shape[0]
     ACTION_DIM = env.action_space.shape[0]
     ACTION_BOUND = env.action_space.high
+    # get the cup number
     # NUM_WORKERS = multiprocessing.cpu_count()
     NUM_WORKERS = 8
     print('num workers:{}'.format(NUM_WORKERS))
@@ -290,7 +299,7 @@ if __name__ == "__main__":
 
     if args.test:
         print('loading weights')
-        GLOBAL_AC.load()
+        GLOBAL_AC.load('1499')
 
         for ep in range(10):
             s = env.reset()

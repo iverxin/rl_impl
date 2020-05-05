@@ -9,6 +9,11 @@ import tensorflow as tf
 import tensorflow_probability as tp
 import tensorflow.keras as keras
 from ac import model
+"""
+Author: Spade
+@Time : 2020/5/5 
+@Email: spadeaiverxin@163.com
+"""
 
 """
 单线程模拟多线程
@@ -31,7 +36,7 @@ SEED = 2
 EPISODE_STEP = 200
 
 
-class A3C(object):
+class A2C(object):
     def __init__(self, name):
         self.state_dim = STATE_DIM
         self.action_dim = ACTION_DIM
@@ -146,7 +151,7 @@ class Worker(object):
             env = gym.make(ENV)
             self.workers_env.append(env)
             self.start_state.append(env.reset())
-            self.agents.append(A3C(name+str(num)))
+            self.agents.append(A2C(name + str(num)))
 
 
     def get_trajectory(self, init_state, id ):
@@ -230,8 +235,11 @@ class Worker(object):
                 ret_list = tf.convert_to_tensor(ret_list, dtype=tf.float32)
 
                 self.agents[i].update_to_global(states, actions, ret_list)
-
-
+            """
+                use the grads' sum to update one 
+                is equal to 
+                use the grad update multi-times
+            """
             # sync
             for i in range(self.worker_num):
                 self.agents[i].pull_from_global()
@@ -240,7 +248,7 @@ class Worker(object):
 if __name__ == "__main__":
     # add arguments in command  --train/test
     parser = argparse.ArgumentParser(description='Train or test neural net motor controller.')
-    parser.add_argument('--train', dest='train', action='store_true', default=True)
+    parser.add_argument('--train', dest='train', action='store_true', default=False)
     parser.add_argument('--test', dest='test', action='store_true', default=True)
     args = parser.parse_args()
 
@@ -264,7 +272,7 @@ if __name__ == "__main__":
         os.makedirs('a2c')
     BASE_LOG_DIR = 'a2c'
 
-    GLOBAL_AC =None
+    GLOBAL_AC = A2C('Global_name')
     if args.train:
         ##########tensorboard##############
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + 'a2c'
@@ -275,7 +283,7 @@ if __name__ == "__main__":
         actor_j_mean = keras.metrics.Mean('actor_j_mean', dtype=tf.float32)
         train_summary_writer = tf.summary.create_file_writer(train_log_dir)
 
-        GLOBAL_AC = A3C('Global_name')
+
         # Train
         worker = Worker(name='worker',num=8)
         worker.learn()
